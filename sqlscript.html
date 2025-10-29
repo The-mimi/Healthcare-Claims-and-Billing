@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SQL Script Display</title>
+  <style>
+    pre {
+      background-color: #f4f4f4;
+      padding: 15px;
+      font-family: monospace;
+      border-left: 4px solid #ccc;
+      white-space: pre-wrap; /* This makes long lines wrap within the pre block */
+      word-wrap: break-word;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <pre>
+-- Claims Processing Efficiency -- Total patient = 4,000. Percentage of Approval = 64.6%
+#1 Average claim Processing Time (23.06 days)
+Select avg(processingTimeDays) as avg_ProcessingTimeDays
+From `hospital-discharge.healthcare_claims.claims`
+;
+-- (Note. The average processing time is 23.06 Days)
+
+#2 Is there a difference in processsing time based on claim status (approved vs denied) 
+WITH claimStatusAvg AS (
+  SELECT claimStatus, AVG(processingTimeDays) AS AvgProcessingTimeDays
+  FROM `hospital-discharge.healthcare_claims.claims`
+  GROUP BY claimStatus
+),
+OverallAvg AS (
+  SELECT AVG(processingTimeDays) AS OverallDaysAvg
+  FROM `hospital-discharge.healthcare_claims.claims`
+)
+SELECT
+  c.claimStatus,
+  c.AvgProcessingTimeDays,
+  c.AvgProcessingTimeDays - o.OverallDaysAvg AS DiffFromOverallAvg
+FROM claimStatusAvg c
+CROSS JOIN OverallAvg o
+;
+-- (Note: Under Review has the longest average processing time at 25.4 days, 2.4 days above the overall 	average. Approved (22.8), Pending (22.9), and Denied (~23.0) are below average. Partially Approved 	(23.6) is the second longest. )
+
+#3 Does priorityFlag influence the speed of claim processing
+SELECT priorityFlag, AVG(processingTimeDays) AS AvgProcessingTimeDays
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY priorityFlag
+;
+-- (Note: Priority Flag does not have a great influence in the speed of claim processing.  Standard 		priority flag has a slight advantage(23.2 days) average processing time over Medium and High, 	with high(~22.1 days) having the shortest time.)
+
+-- Financial Insights ---
+#4 PaidAmounts and billedAmounts that differ significantly
+SELECT 
+  claimId,
+  procedureCode,
+  memberId,
+  providerId,
+  serviceDate,
+  billedAmount,
+  paidAmount,
+  ABS(paidAmount - billedAmount) AS amountDifference,
+  SAFE_DIVIDE(ABS(paidAmount - billedAmount), NULLIF(billedAmount, 0)) AS percentageDifference
+FROM 
+  `hospital-discharge.healthcare_claims.claims`
+WHERE 
+  ABS(paidAmount - billedAmount) > 100  -- absolute threshold for significant difference
+  OR SAFE_DIVIDE(ABS(paidAmount - billedAmount), NULLIF(billedAmount, 0)) > 0.10  -- relative 10% threshold
+ORDER BY
+  amountDifference DESC
+LIMIT 100 
+;
+-- (Note: Top 3 procedures that differ significantly are procedure codes 7321, 72148, and 45378. 	Out of the top 100 claims that differ significantly 7321 is the top procedure and has the highest 	difference of  $1225 and percent difference of 53.5%. )
+
+#5 Average memberResponsibility for patients and by network
+SELECT
+	networkstatus,
+    COUNT(*) As totalClaims,
+    AVG(memberResponsibility) AS avgMemberResponsibility,
+    SUM(memberResponsibility) AS totalMemberResponsibility
+FROM 'hospital-discharge.healthcare_claims.claims'
+Group By networkStatus
+Order By avgMemberResonsibility DESC
+; 
+
+SELECT memberId, avg(memberResponsibility) AS AvgMemberResponsibility, networkStatus
+From `hospital-discharge.healthcare_claims.claims` 
+Group By memberId, networkStatus 
+;
+-- (Note: In Network avg is $150 and Out of Network $247)
+
+#6 Top 25% of providers that have the highest billedAmount vs paidAmount
+WITH provider_ratios AS (
+	SELECT 
+    providerId,
+    SUM(billedAmount) AS totalBilled,
+    SUM(paidAmount) AS totalPaid,
+    SAFE_DIVIDE(SUM(billedAmount), NULLIF(SUM(paidAmount), 0)) AS billedToPaidRatio
+  FROM `hospital-discharge.healthcare_claims.claims`
+  GROUP BY providerId
+),
+percentile_threshold AS (
+  SELECT APPROX_QUANTILES(billedToPaidRatio, 4)[OFFSET(3)] AS percentile_75
+  FROM provider_ratios
+)
+SELECT provider_ratios.*
+FROM provider_ratios 
+JOIN percentile_threshold pt
+  ON provider_ratios.billedToPaidRatio >= pt.percentile_75
+ORDER BY provider_ratios.billedToPaidRatio DESC
+;
+-- ( Top 25% is synced excel)
+
+-- Provider Network Analysis
+#7 percentage of claims from in network vs out of network providers
+SELECT 
+networkStatus,
+COUNT(*) AS claimCount,
+COUNT(*) * 100.0 / SUM(COUNT(*)) OVER() AS percentClaims
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY networkStatus 
+;
+-- (Note: 86% of providers are  In network and  Out of Network is 14.3%)
+
+#8 Differences in claim appproval rates or financial outcomes based on network status
+SELECT 
+networkStatus,
+COUNT(*) AS totalClaims,
+COUNTIF(claimStatus = 'approved') AS approvedClaims,
+COUNTIF(claimStatus = 'denied') AS deniedClaims,
+AVG(paidAmount) AS avgPaid,
+AVG(billedAmount) AS avgBilled,
+AVG(processingTimeDays) AS avgProcessingDays,
+SAFE_DIVIDE(COUNTIF(claimStatus = 'approved'), COUNT(*)) AS approvalRate,
+SAFE_DIVIDE(COUNTIF(claimStatus = 'denied'), COUNT(*)) AS denialRate
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY networkStatus 
+;
+-- (Note: There is a 143.5% difference in claim approval between In Network(55.28%) and Out of 	Network(9.1%). The average processing time for approval rate for In network s is ~23.0 days 	and  23.6 days for Out of Network. )
+
+-- Claimed Denial analysis
+#9 What are the most common reasons for claim denials
+SELECT 
+  denialReason,
+COUNT(denialReason) AS denialCount
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY denialReason
+ORDER BY denialCount DESC
+LIMIT 5 
+;
+-- (Note: Not medically needed is the most common reason for claim denials)
+
+#10. Frequency of denials by time of year or providers
+SELECT 
+  providerId,
+  EXTRACT(MONTH FROM serviceDate) AS month,
+  COUNT(*) AS totalClaims,
+  COUNTIF(claimStatus = 'denied') AS deniedClaims,
+  SAFE_DIVIDE(COUNTIF(claimStatus = 'denied'), COUNT(*)) AS denialRate
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY providerId, month
+ORDER BY denialRate DESC, deniedClaims DESC
+LIMIT 25
+;
+SELECT 
+  EXTRACT(MONTH FROM serviceDate) AS month,
+  COUNT(*) AS totalClaims,
+  COUNTIF(claimStatus = 'denied') AS deniedClaims,
+  SAFE_DIVIDE(COUNTIF(claimStatus = 'denied'), COUNT(*)) AS denialRate
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY month
+ORDER BY month
+;
+-- (Note: monthly denials reveals a distinct wavelike trend, characterized by recurring peaks and 	troughs that follow a relatively consistent cyclical pattern. The trend falls sharply in November, 	to its lowest of 7.0% and rises to its highest in December to 12.5 %.)
+
+#11  Impact of denied claims on patient responsibility and insurance costs
+SELECT
+  claimStatus,
+  AVG(memberResponsibility) AS avgMemberResponsibility,
+  AVG(paidAmount) AS avgPaidAmount
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY claimStatus 
+;
+
+SELECT
+  claimStatus,
+  COUNT(*) AS totalClaims,
+  AVG(memberResponsibility) AS avgMemberResponsibility,
+  SUM(memberResponsibility) AS totalMemberResponsibility,
+  AVG(paidAmount) AS avgPaidAmount,
+  SUM(paidAmount) AS totalPaidAmount
+FROM `hospital-discharge.healthcare_claims.claims`
+GROUP BY claimStatus
+ORDER BY totalMemberResponsibility DESC
+;
+
+-- (Note: $74,829 is the cost burden on patients an average of $179 per person and The lost revenue of -$113,313)
+ </pre>
+</body>
+</html>
