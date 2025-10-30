@@ -1,0 +1,110 @@
+Power Bi DAX Code 
+
+1. Approved %: Calculates the percentage of claims with status "Approved" out of all claims.
+   Used For: Operational KPI card and approval rate trend analysis.
+Code: 
+Approved % = VAR TotalApproved = COUNTROWS(FILTER(VALUES('healthcare_claims'), 'healthcare_claims'[claimStatus]= "Approved"))                                                                                         VAR TotalClaims = COUNTROWS(VALUES('healthcare_claims'))                                           RETURN DIVIDE(TotalApproved, TotalClaims, 0)  
+
+ 
+2. Average Estimated Savings: Calculates the average cost difference between out-of-network and in-network claims.
+   Used For: Patient affordability visuals and member education strategy.
+Code:
+Average Estimated Savings = 
+VAR AvgInNetwork = 
+    CALCULATE(
+        AVERAGE('healthcare_claims'[billedAmount]),
+        'healthcare_claims'[networkStatus] = "In Network"
+    )
+VAR AvgOutNetwork = 
+    CALCULATE(
+        AVERAGE('healthcare_claims'[billedAmount]),
+        'healthcare_claims'[networkStatus] = "Out of Network"
+    )
+RETURN
+    AvgOutNetwork – AvgInNetwork
+
+
+3. Average Savings %: Expresses savings as a percentage of out-of-network billed amount.
+  Used For: Cost comparison visuals and network value communication.
+Code:
+Average Savings % = 
+VAR Savings = [Average Estimated Savings]
+VAR AvgOutNetwork =
+    CALCULATE(
+        AVERAGE('healthcare_claims'[billedAmount]),
+        'healthcare_claims'[networkStatus] = "Out of Network"
+    )
+RETURN
+    IF(
+        SELECTEDVALUE('healthcare_claims'[networkStatus]) = "In Network",
+        DIVIDE(Savings, AvgOutNetwork, 0),
+        BLANK()
+    )
+
+
+4. Bill Difference: Calculates the percentage difference between billed and allowed amounts.
+   Used For: Provider reimbursement gap analysis and contract renegotiation visuals.
+Code:
+billdifference = Divide(Sum(healthcare_claims[billedAmount]) - Sum(healthcare_claims[allowedAmount]), Sum(healthcare_claims[billedAmount]), 0)
+
+
+5. Discrepancy Column: create a calculated column to show the difference between paid and allowed amounts per claim.
+Used For: Discrepancy classification and financial integrity checks.
+Code:
+claimDiscrepancy = 'healthcare_claims'[paidAmount] – 'healthcare_claims'[allowedAmount]
+
+
+6. Denied %: Calculates the percentage of claims denied.
+   Used For: Denial rate tracking and seasonal trend analysis.
+Code:
+Denied % = VAR TotalDenied = COUNTROWS(FILTER(VALUES('healthcare_claims'), 'healthcare_claims'[claimStatus]= "Denied"))                                                                                         VAR TotalClaims = COUNTROWS(VALUES('healthcare_claims'))                                           RETURN DIVIDE(TotalDenied, TotalClaims, 0)     
+
+
+7. Discrepancy Type: Classifies claims based on discrepancy direction.
+   Used For: Visual segmentation of claim payment accuracy.
+Code:
+discrepancyType = 
+SWITCH(
+    TRUE(),
+    'healthcare_claims'[claimDiscrepancy] > 0, "Overpaid",
+    'healthcare_claims'[claimDiscrepancy] < 0, "Underpaid", "Balanced"
+)
+
+
+8.  High Priority Count: Calculates the proportion of high-priority claims.
+    Used For: Operational workload analysis and triage evaluation.
+Code:
+ highPriorityCount = DIVIDE(
+CALCULATE(
+    COUNTA('healthcare_claims'[claimId]),
+    'healthcare_claims'[priorityFlag] = "High"), COUNTA('healthcare_claims' [claimId] ))
+
+
+9. Patient High Burden: Flags claims with member responsibility over $200.
+   Used For: Patient affordability segmentation and burden visualization.
+Code:
+IsHighBurden = IF(MAX('healthcare_claims'[memberResponsibility]) > 200 , "High", "Normal")
+
+
+10. Paid Claims%: Calculates the percentage of claims that were overpaid or underpaid.
+      Used For: Payment accuracy monitoring and provider audit targeting.
+Code:
+paidClaims% = 
+DIVIDE(
+    CALCULATE(COUNTROWS('healthcare_claims'), 'healthcare_claims'[discrepancyType] = "Overpaid"),
+    COUNTROWS('healthcare_claims'),
+    0
+)
+ = 
+DIVIDE(
+    CALCULATE(COUNTROWS('healthcare_claims'), 'healthcare_claims'[discrepancyType] = "Underpaid"),
+    COUNTROWS('healthcare_claims'),
+    0
+)
+
+
+11. Total Impact: Calculates net financial impact on the patient.
+    Used For: Patient cost burden
+Code:
+TotalImpact = [memberResponsibility] - [paidAmount] 
+
