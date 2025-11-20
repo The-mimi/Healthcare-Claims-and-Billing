@@ -1,2 +1,10 @@
 # Healthcare-Claims-and-Billing
-This analysis focuses on four interconnected domains of healthcare claims performance. Claims processing efficiency evaluates how quickly and consistently claims move to approval, identifying any delays or operational bottlenecks. Financial insights examine the relationships between billed, allowed, and paid amounts to highlight cost discrepancies that affect both patients and providers. Provider network performance compares in-network and out-of-network outcomes to assess how network status influences claim approval and patient costs. Finally, claim denial analysis investigates the leading causes and seasonal trends of denials.
+**Objective:**
+Evaluate the operational efficiency and financial performance of healthcare claims to identify patterns in processing times, denial rates, and cost discrepancies, guiding strategies for process improvement and cost reduction.
+
+**Dataset Overview:**
+The healthcare claims dataset contains comprehensive information about:
+    • 4,000+ claims with dates, claim status, network status, denial reason, priority flag, billed/allowed/paid amount, and patient responsibility. 
+    • 8 different provider types (Hospital, Outpatient, Emergency, etc.).
+    • Financial Data: Billed amounts, allowed amounts, paid amounts, and member responsibilities 
+
